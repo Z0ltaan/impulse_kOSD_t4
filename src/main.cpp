@@ -6,27 +6,21 @@
 #include <filesystem>
 #include <iostream>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <nlohmann/json.hpp>
 #include <ostream>
-#include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
+#include "CLI/CLI.hpp"
+#include "config.hpp"
+#include "handle_cli_options.hpp"
 
 using json = nlohmann::json;
 
 namespace media_finder
 {
-  void print_help_message(std::ostream& out)
-  {
-    out << "usage: media_finder <directory_path> <timeout_in_seconds>\n";
-  }
-
-  std::filesystem::path get_home_path()
-  {
-    const char* home = std::getenv("HOME");
-    return std::filesystem::path{ home };
-  }
-
   class directory_entries_collector
   {
   public:
@@ -41,7 +35,7 @@ namespace media_finder
 
       try
       {
-        categorized_media_[extension_type_mapping.at(
+        categorized_media_[extension_category_mapping.at(
                              entry.path().extension().c_str())]
           .push_back(entry.path().string());
       }
@@ -56,13 +50,13 @@ namespace media_finder
                              { "images", json::array() } };
     }
 
-    std::string to_json() const { return categorized_media_.dump(); };
+    std::string to_json_string() const { return categorized_media_.dump(); };
 
   private:
     json categorized_media_;
 
     const inline static std::map< std::string_view, std::string_view >
-      extension_type_mapping = {
+      extension_category_mapping = {
         { ".wav", "audio" },   { ".aac", "audio" },   { ".wma", "audio" },
         { ".flac", "audio" },  { ".ogg", "audio" },   { ".mp3", "audio" },
         { ".alac", "audio" },  { ".aiff", "audio" },  { ".mp4", "video" },
@@ -73,38 +67,80 @@ namespace media_finder
         { ".tiff", "images" }, { ".heif", "images" }, { ".heic", "images" },
       };
   };
+  class output_json
+  {
+  public:
+    explicit output_json(const std::string& rhs) : mtx_(), data_(rhs) {}
+
+    std::string get_data() const
+    {
+      std::lock_guard l{ mtx_ };
+      return data_;
+    }
+
+    void set_data(std::string rhs)
+    {
+      std::lock_guard l{ mtx_ };
+      data_ = std::move(rhs);
+    }
+
+  private:
+    mutable std::mutex mtx_;
+    std::string data_;
+  };
+
+  std::string collect_data(const std::filesystem::path& directory_to_monitor)
+  {
+    media_finder::directory_entries_collector collector;
+    std::for_each(
+      std::filesystem::recursive_directory_iterator{ directory_to_monitor },
+      std::filesystem::recursive_directory_iterator{},
+      std::ref(collector));
+    return collector.to_json_string();
+  }
 
 }
+
 int
 main(int argc, char** argv)
 {
+  CLI::App arguments_handler;
   try
   {
-    if (argc != 3)
+    media_finder::config config =
+      media_finder::handle_cli_options(argc, argv, arguments_handler);
+
+    std::cout << "starting with directory = " << config.directory_to_monitor
+              << ", interval = " << config.interval.count() << " seconds\n";
+
+    auto end_time = std::chrono::steady_clock::now();
+
+    auto output = std::make_shared< media_finder::output_json >("{}");
+
+    // TODO: still synchronous; there needs to be an asynchronous traverse i think
+    for (;;)
     {
-      media_finder::print_help_message(std::cerr);
-      throw std::runtime_error("wrong amount of arguments");
+      end_time += config.interval;
+
+      output->set_data(
+        std::move(media_finder::collect_data(config.directory_to_monitor)));
+
+      // NOTE: kinda wrong approach (mb even completely??)
+      if (std::chrono::steady_clock::now() >= end_time)
+      {
+
+        std::cout << "overrun; running next scan immediately\n";
+        end_time = std::chrono::steady_clock::now();
+      }
+      else
+      {
+        std::this_thread::sleep_until(end_time);
+      }
     }
-
-    std::filesystem::path directory_to_monitor(argv[1]);
-
-    if (!std::filesystem::is_directory(directory_to_monitor))
-    {
-      throw std::runtime_error("provided path is not a directory");
-    }
-
-    std::chrono::seconds timeout(std::stoul(argv[2]));
-
-    std::cout << directory_to_monitor << ' ' << timeout.count() << '\n';
-
-    media_finder::directory_entries_collector collector;
-
-    auto begin =
-      std::filesystem::recursive_directory_iterator{ directory_to_monitor };
-    auto end = std::filesystem::recursive_directory_iterator{};
-    std::for_each(begin, end, std::ref(collector));
-
-    std::cout << collector.to_json() << '\n';
+  }
+  catch (const CLI::ParseError& e)
+  {
+    arguments_handler.exit(e);
   }
   catch (const std::exception& e)
   {

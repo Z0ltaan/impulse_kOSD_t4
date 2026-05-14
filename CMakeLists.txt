@@ -11,9 +11,17 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/nlohmann/json
   GIT_TAG v3.12.0)
 
-FetchContent_MakeAvailable(nlohmann_json)
+FetchContent_Declare(
+  cli11
+  GIT_REPOSITORY https://github.com/CLIUtils/CLI11
+  GIT_TAG v2.6.2)
+
+FetchContent_MakeAvailable(nlohmann_json cli11)
 
 file(GLOB_RECURSE src_files CONFIGURE_DEPENDS ${CMAKE_HOME_DIRECTORY}/src/*.cpp)
 
 add_executable(${PROJECT_NAME} ${src_files})
-target_link_libraries(${PROJECT_NAME} PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(
+  ${PROJECT_NAME}
+  PRIVATE nlohmann_json::nlohmann_json
+  PRIVATE CLI11::CLI11)
