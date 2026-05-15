@@ -22,11 +22,6 @@ media_finder::handle_cli_options(int argc,
                                  CLI::App& arguments_controller)
 {
 
-  arguments_controller.name("media_finder");
-  arguments_controller.description("Small (media)filewatcher server");
-
-  argv = arguments_controller.ensure_utf8(argv);
-
   size_t interval = 30;
   arguments_controller.add_option(
     "-i,--interval",
@@ -40,6 +35,7 @@ media_finder::handle_cli_options(int argc,
                 "Set directory to monitor (defaults to $HOME)")
     ->check(CLI::ExistingDirectory);
 
+  argv = arguments_controller.ensure_utf8(argv);
   arguments_controller.parse(argc, argv);
 
   config config{};
@@ -48,10 +44,6 @@ media_finder::handle_cli_options(int argc,
   {
     config.directory_to_monitor = get_home_path();
   }
-  // else if (!std::filesystem::is_directory(directory_path))
-  // {
-  //   throw std::runtime_error("provided path is not a directory");
-  // }
   else
   {
     config.directory_to_monitor = directory_path;

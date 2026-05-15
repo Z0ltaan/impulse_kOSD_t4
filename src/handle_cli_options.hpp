@@ -9,6 +9,8 @@ namespace media_finder
   config handle_cli_options(int argc,
                             char** argv,
                             CLI::App& arguments_controller);
+
+  CLI::App get_default_app();
 }
 
 #endif
