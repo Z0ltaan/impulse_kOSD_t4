@@ -43,7 +43,7 @@ main(int argc, char** argv)
   try
   {
     media_finder::config config;
-    CLI::App arguments_handler{ "Small (media)filewatcher server",
+    CLI::App arguments_handler{ "Small (media)file poller server",
                                 "media_finder" };
     try
     {
